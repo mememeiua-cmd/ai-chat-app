@@ -1,0 +1,21 @@
+packages:
+  "framer-motion": "For smooth message entry animations and sidebar transitions"
+  "react-markdown": "To render rich text and code blocks in AI responses"
+  "remark-gfm": "For GitHub flavored markdown support in react-markdown"
+  "clsx": "For conditional class merging"
+  "tailwind-merge": "To resolve Tailwind class conflicts"
+  "date-fns": "For formatting message timestamps"
+  "lucide-react": "For UI icons"
+
+images:
+  - path: "artifacts/chat-app/public/images/ai-avatar.png"
+    description: "A sleek, minimal, glowing geometric orb representing an AI assistant, dark background, futuristic"
+    aspect_ratio: "1:1"
+  - path: "artifacts/chat-app/public/images/empty-state-bg.png"
+    description: "Subtle abstract dark gradient mesh with deep purple and black tones, highly polished, smooth"
+    aspect_ratio: "16:9"
+
+notes:
+  - Using generated hooks from @workspace/api-client-react
+  - Implementing full dark mode UI by default as requested
+  - Using wouter for routing (/:id for conversations)
