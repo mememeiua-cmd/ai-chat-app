@@ -2,14 +2,19 @@ import { useListConversations, useCreateConversation, useDeleteConversation } fr
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, MessageSquare, Trash2, Loader2, Sparkles, Github
+  Plus, MessageSquare, Trash2, Loader2, Sparkles, Github, X
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { GitHubPanel } from "@/components/github/github-panel";
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function SidebarContent({ onClose }: { onClose: () => void }) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [showGitHub, setShowGitHub] = useState(false);
@@ -21,6 +26,7 @@ export function Sidebar() {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
         setLocation(`/${data.id}`);
+        onClose();
       },
     },
   });
@@ -50,19 +56,27 @@ export function Sidebar() {
     });
   };
 
+  const isConnected = typeof window !== "undefined" && !!localStorage.getItem("gh_token");
+
   return (
     <>
-      {/* Main Sidebar */}
-      <div className="w-64 flex-shrink-0 bg-sidebar border-r border-sidebar-border h-full flex flex-col z-20">
+      <div className="flex flex-col h-full bg-sidebar">
         {/* Brand header */}
         <div className="px-4 pt-5 pb-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30 flex-shrink-0">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <div className="font-bold text-sm">Nexus AI</div>
             <div className="text-[10px] text-muted-foreground">AI Assistant</div>
           </div>
+          {/* Close button — mobile only */}
+          <button
+            onClick={onClose}
+            className="md:hidden p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* New Chat Button */}
@@ -70,7 +84,7 @@ export function Sidebar() {
           <button
             onClick={handleCreate}
             disabled={createMutation.isPending}
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-md shadow-primary/25 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0"
+            className="w-full flex items-center gap-2 px-3 py-3 rounded-xl font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-md shadow-primary/25 active:scale-95"
           >
             {createMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -113,6 +127,7 @@ export function Sidebar() {
                     >
                       <Link
                         href={`/${conv.id}`}
+                        onClick={onClose}
                         className={cn(
                           "group flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 relative overflow-hidden",
                           isActive
@@ -176,39 +191,77 @@ export function Sidebar() {
           >
             <Github className="w-4 h-4" />
             <span>GitHub</span>
-            {typeof window !== "undefined" && localStorage.getItem("gh_token") && (
+            {isConnected && (
               <span className="ml-auto text-[9px] bg-green-500/20 text-green-400 border border-green-500/20 rounded-full px-1.5 py-0.5">
-                •
+                ●
               </span>
             )}
           </button>
         </div>
       </div>
 
-      {/* GitHub Panel — floating overlay, does NOT push main content */}
+      {/* GitHub Panel — floating overlay */}
       <AnimatePresence>
         {showGitHub && (
           <>
-            {/* Backdrop */}
             <motion.div
               key="gh-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[1px]"
+              className="fixed inset-0 z-40 bg-black/40"
               onClick={() => setShowGitHub(false)}
             />
-            {/* Panel */}
             <motion.div
               key="gh-panel"
               initial={{ x: -20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -20, opacity: 0 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
-              className="fixed left-64 top-0 bottom-0 z-40 w-[340px] shadow-2xl"
+              className="fixed left-0 md:left-64 top-0 bottom-0 z-50 w-[min(340px,100vw)] shadow-2xl"
             >
               <GitHubPanel onClose={() => setShowGitHub(false)} />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  return (
+    <>
+      {/* Desktop sidebar — always visible */}
+      <aside className="hidden md:flex w-64 flex-shrink-0 border-r border-sidebar-border h-full flex-col z-20 relative">
+        <SidebarContent onClose={onClose} />
+      </aside>
+
+      {/* Mobile sidebar — slide-in overlay */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="sidebar-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+              onClick={onClose}
+            />
+            {/* Drawer */}
+            <motion.div
+              key="sidebar-drawer"
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="md:hidden fixed left-0 top-0 bottom-0 z-50 w-72 shadow-2xl border-r border-sidebar-border"
+            >
+              <SidebarContent onClose={onClose} />
             </motion.div>
           </>
         )}
