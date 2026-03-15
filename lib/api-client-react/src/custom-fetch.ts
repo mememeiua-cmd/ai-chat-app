@@ -271,11 +271,31 @@ async function parseSuccessBody(
   }
 }
 
+function applyBaseUrl(input: RequestInfo | URL): RequestInfo | URL {
+  const baseUrl =
+    typeof import.meta !== "undefined" &&
+    // @ts-ignore - vite env var
+    typeof import.meta.env !== "undefined"
+      ? // @ts-ignore - vite env var
+        (import.meta.env.VITE_API_BASE_URL as string | undefined)
+      : undefined;
+
+  if (!baseUrl) return input;
+
+  const url = resolveUrl(input);
+  if (url.startsWith("http://") || url.startsWith("https://")) return input;
+
+  const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  return `${base}${url}`;
+}
+
 export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
 ): Promise<T> {
   const { responseType = "auto", headers: headersInit, ...init } = options;
+
+  input = applyBaseUrl(input);
 
   const method = resolveMethod(input, init.method);
 

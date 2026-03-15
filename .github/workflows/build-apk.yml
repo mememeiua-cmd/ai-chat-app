@@ -1,0 +1,95 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build web app for Android
+        working-directory: artifacts/chat-app
+        env:
+          PORT: "3000"
+          BASE_PATH: "/"
+          NODE_ENV: production
+          VITE_API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://b590edc8-39b6-40ec-93e8-61174cfc26f7-00-26zysoetnca67.spock.replit.dev' }}
+        run: pnpm run build
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install Capacitor CLI
+        working-directory: artifacts/chat-app
+        run: |
+          pnpm add @capacitor/cli @capacitor/core @capacitor/android --save-dev
+          pnpm add @capacitor/android
+
+      - name: Add Android platform
+        working-directory: artifacts/chat-app
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        working-directory: artifacts/chat-app
+        run: npx cap sync android
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Debug APK
+        working-directory: artifacts/chat-app/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-chat-app-${{ steps.version.outputs.VERSION }}.apk
+          path: artifacts/chat-app/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: "AI Chat App - ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## AI Chat App - Android APK
+
+            Tải và cài đặt file APK để trò chuyện với AI không giới hạn trên điện thoại Android.
+
+            ### Cài đặt:
+            1. Tải file `app-debug.apk`
+            2. Cho phép cài đặt từ nguồn không xác định trong cài đặt điện thoại
+            3. Cài đặt APK
+            4. Mở app và bắt đầu trò chuyện!
+          files: artifacts/chat-app/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
