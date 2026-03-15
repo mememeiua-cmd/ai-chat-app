@@ -109,6 +109,9 @@ router.post("/conversations/:conversationId/messages", async (req, res): Promise
     return;
   }
 
+  const imageBase64: string | undefined = (req.body as any).imageBase64;
+  const imageMimeType: string = (req.body as any).imageMimeType || "image/jpeg";
+
   const [conversation] = await db
     .select()
     .from(conversations)
@@ -125,47 +128,74 @@ router.post("/conversations/:conversationId/messages", async (req, res): Promise
     .where(eq(messages.conversationId, params.data.conversationId))
     .orderBy(messages.createdAt);
 
+  const imageDataUrl = imageBase64
+    ? `data:${imageMimeType};base64,${imageBase64.replace(/^data:[^;]+;base64,/, "")}`
+    : undefined;
+
   const [userMsg] = await db
     .insert(messages)
     .values({
       conversationId: params.data.conversationId,
       role: "user",
-      content: body.data.content,
+      content: imageDataUrl
+        ? `${body.data.content}\n\n[image:${imageDataUrl}]`
+        : body.data.content,
     })
     .returning();
 
-  const chatMessages = [
+  const latestUserContent: any = imageBase64
+    ? [
+        { type: "text", text: body.data.content || "What is in this image?" },
+        {
+          type: "image_url",
+          image_url: {
+            url: imageDataUrl,
+            detail: "auto",
+          },
+        },
+      ]
+    : body.data.content;
+
+  const chatMessages: any[] = [
     {
-      role: "system" as const,
-      content: "You are a helpful AI assistant. Be conversational, thoughtful, and thorough in your responses. You can engage in long, detailed conversations on any topic.",
+      role: "system",
+      content:
+        "You are Nexus AI — a helpful, knowledgeable, and conversational AI assistant. Be thoughtful, detailed, and friendly. You can analyze images, write code, answer questions, and help with any topic.",
     },
     ...history.map((m) => ({
       role: m.role as "user" | "assistant",
-      content: m.content,
+      content: m.content.replace(/\n\n\[image:[^\]]+\]/g, " [image attached]"),
     })),
-    { role: "user" as const, content: body.data.content },
+    { role: "user", content: latestUserContent },
   ];
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("X-User-Message-Id", String(userMsg.id));
 
   let fullResponse = "";
 
-  const stream = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    messages: chatMessages,
-    stream: true,
-  });
+  try {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 8192,
+      messages: chatMessages,
+      stream: true,
+    });
 
-  for await (const chunk of stream) {
-    const content = chunk.choices[0]?.delta?.content;
-    if (content) {
-      fullResponse += content;
-      res.write(`data: ${JSON.stringify({ content })}\n\n`);
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        fullResponse += content;
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
     }
+  } catch (err: any) {
+    res.write(`data: ${JSON.stringify({ error: err.message || "AI error" })}\n\n`);
+    res.end();
+    return;
   }
 
   const [assistantMsg] = await db
@@ -176,6 +206,32 @@ router.post("/conversations/:conversationId/messages", async (req, res): Promise
       content: fullResponse,
     })
     .returning();
+
+  // Auto-title the conversation after first exchange
+  if (history.length === 0 && body.data.content) {
+    try {
+      const titleRes = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 20,
+        messages: [
+          {
+            role: "user",
+            content: `Generate a short title (max 6 words, no quotes) for a conversation that starts with: "${body.data.content.slice(0, 200)}"`,
+          },
+        ],
+        stream: false,
+      });
+      const newTitle = titleRes.choices[0]?.message?.content?.trim();
+      if (newTitle) {
+        await db
+          .update(conversations)
+          .set({ title: newTitle, updatedAt: new Date() })
+          .where(eq(conversations.id, params.data.conversationId));
+      }
+    } catch {
+      // non-fatal
+    }
+  }
 
   await db
     .update(conversations)
